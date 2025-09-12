@@ -1,0 +1,122 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  # Use a safe path that always exists inside the container.
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # 1) Collect Docker container JSON logs (json-file driver)
+  - job_name: docker
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+
+    pipeline_stages:
+      - docker: {}
+
+    relabel_configs:
+      # Ensure we always have a 'job' stream label
+      - action: replace
+        target_label: job
+        replacement: docker
+
+      # Avoid self-collection
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        regex: promtail
+        action: drop
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        regex: loki
+        action: drop
+
+      # Human-friendly labels
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        target_label: project
+
+      # Point to the Docker json log file
+      - source_labels: [__meta_docker_container_id]
+        target_label: __path__
+        replacement: /var/lib/docker/containers/$1/$1-json.log
+
+  # 2) Collect Laravel application file logs
+  - job_name: laravel-logs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: laravel
+          app: mealhub
+          env: local
+          __path__: /var/log/laravel/*.log
+    pipeline_stages:
+      # 解析 Laravel Monolog JSON 行
+      - json:
+          expressions:
+            msg: message
+            ctx: context
+            lvl: level_name
+            ch: channel
+            ts: datetime
+      # 從 context 取出我們關心的欄位
+      - json:
+          source: ctx
+          expressions:
+            url: url
+            httpStatus: httpStatus
+            logLevel: logLevel
+            req: request
+            resp: response
+      - json:
+          source: req
+          expressions:
+            method: method
+      - json:
+          source: resp
+          expressions:
+            appStatus: status
+            appMessage: message
+      # 從 URL 萃取 path，並產生低基數的 endpoint（以 :id 取代數字/UUID 片段）
+      - regex:
+          source: url
+          expression: '^(?:https?://[^/]+)?(?P<path>/[^?]*)'
+      - template:
+          source: endpoint
+          template: '{{ if .path }}{{ regexReplaceAll "/[0-9]+|/[0-9a-fA-F-]{8,}" .path "/:id" }}{{ end }}'
+      # 將低基數欄位提升為 Labels，方便以 Fields 篩選
+      - labels:
+          app:
+          env:
+          job:
+          ch:
+          lvl:
+          logLevel:
+          httpStatus:
+          method:
+          appStatus:
+          appMessage:
+          endpoint:
+      # 可選：把時間戳設為日誌內的 datetime
+      - timestamp:
+          source: ts
+          format: RFC3339Nano
+      # 保留原始 JSON 內容，方便在 Grafana 以 `| json` 解析出完整的 request/response 欄位
+
+  # 3) (Optional) Collect host system logs if /var/log is mounted
+  - job_name: system-logs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: system-logs
+          __path__: /var/log/*.log
