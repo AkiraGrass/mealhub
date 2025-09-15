@@ -29,6 +29,12 @@ class HttpStatusMap
         // 伺服器錯誤類
         'serverError'            => 500,
         'failure'                => 500,
+
+        // 其他常見 HTTP 狀態對應
+        'badRequest'             => 400,
+        'methodNotAllowed'       => 405,
+        'tooManyRequests'        => 429,
+        'conflict'               => 409,
     ];
 
     public static function for(string $messageKey): ?int

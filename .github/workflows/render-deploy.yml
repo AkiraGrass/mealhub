@@ -1,8 +1,6 @@
 name: Deploy to Render
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -33,4 +31,3 @@ jobs:
           echo "Triggering Render deploy..."
           curl -f -X POST "$RENDER_DEPLOY_HOOK_URL"
           echo "Deploy triggered. View progress in Render dashboard."
-

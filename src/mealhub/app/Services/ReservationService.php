@@ -22,23 +22,25 @@ use Illuminate\Support\Facades\Mail;
  *      取消時則遞減 reserved，確保不會超賣或少還。
  * - 可用量查詢：以餐廳 table_buckets 為 capacity，上述 slot.reserved 為已訂數，
  *   兩者相減得到 available。
+ *
+ * 防超買（Oversell）設計重點：
+ * - Redis setnx 先拿到「短鎖」（餐廳/日期/時段）以降低爭用範圍。
+ * - 交易內對 slot 行鎖 lockForUpdate，再檢查 reserved < capacity 才允許 +1。
+ * - slot 設計唯一索引，避免併發下產生重複列。
+ *
+ * 防超還（Over-return）設計重點：
+ * - 僅對 CONFIRMED 訂位做還位；
+ * - 交易內行鎖 + reserved>0 才遞減，避免負數。
  */
 class ReservationService
 {
-    /**
-     * 產生 Redis 名額計數用的 key（目前僅保留內部使用場景）
-     */
-    private function slotKey(int $restaurantId, string $date, string $timeslot, int $partySize): string
-    {
-        return sprintf('resv:%d:%s:%s:%d', $restaurantId, $date, $timeslot, $partySize);
-    }
-
     /**
      * 產生 Redis 短鎖用的 key
      * - 以餐廳/日期/時段為單位鎖住臨界區，降低 DB 行鎖競爭
      */
     private function lockKey(int $restaurantId, string $date, string $timeslot): string
     {
+        // 以餐廳/日期/時段為粒度鎖定臨界區（不含人數桶，較保守）
         return sprintf('lock:resv:%d:%s:%s', $restaurantId, $date, $timeslot);
     }
 
@@ -53,6 +55,7 @@ class ReservationService
      */
     public function book(int $userId, int $restaurantId, string $date, string $timeslot, int $partySize, array $guestEmails = []): array
     {
+        // 1) 取得餐廳可用量設定（buckets）
         $restaurant = Restaurant::findOrFail($restaurantId);
         $buckets = (array) ($restaurant->table_buckets ?? []);
         $capacity = (int) ($buckets[(string) $partySize] ?? 0);
@@ -60,7 +63,7 @@ class ReservationService
             throw new \InvalidArgumentException('no_capacity_for_party_size');
         }
 
-        // 先檢查同餐廳是否已有有效訂位
+        // 2) 基礎防呆：同餐廳已有有效訂位時不允許再次下單（可依需求調整）
         $exists = Reservation::where('restaurant_id', $restaurantId)
             ->where('user_id', $userId)
             ->where('status', ReservationStatus::CONFIRMED)
@@ -70,9 +73,9 @@ class ReservationService
         }
 
         $lockKey = $this->lockKey($restaurantId, $date, $timeslot);
-        $slotKey = $this->slotKey($restaurantId, $date, $timeslot, $partySize);
 
-        // 1) 取得短鎖（避免臨界區內同時多次寫入）
+        // 3) 取得 Redis 短鎖（避免併發同時進入臨界區）
+        //    - setnx 成功代表取得鎖，隨後設定短期過期避免死鎖
         $lock = Redis::setnx($lockKey, 1);
         if (!$lock) {
             throw new \RuntimeException('try_again');
@@ -80,10 +83,13 @@ class ReservationService
         Redis::expire($lockKey, 15); // 短期鎖（秒），避免競爭視窗
 
         try {
+            // 為使用者回傳的訂位代碼與匿名查詢用短 token
             $code = app(JwtService::class)->uuid();
             $short = bin2hex(random_bytes(8));
 
-            // 2) 交易內使用 DB 行鎖確保一致性
+            // 4) 交易內使用 DB 行鎖確保一致性：
+            //    - 取出/建立 slot 計數列並 lockForUpdate
+            //    - 確認 reserved < capacity 後才建立訂位並 +1
             DB::transaction(function () use ($userId, $restaurantId, $date, $timeslot, $partySize, $code, $short, $guestEmails, $capacity) {
                 // 強一致：鎖定/建立 slot 計數列
                 $slot = RestaurantReservationSlot::where([
@@ -122,7 +128,7 @@ class ReservationService
                 }
             });
 
-            // 4) 寄信（用 queue；需設定 QUEUE_CONNECTION 與 mailer）
+            // 5) 寄信（非同步 queue）：需 QUEUE_CONNECTION 與 mailer 設定
             $shortLink = url('/api/reservations/short/'.$short);
             $restaurantName = $restaurant->name;
             $mail = new ReservationCreatedMail($restaurantName, $date, $timeslot, $partySize, $shortLink);
@@ -143,10 +149,10 @@ class ReservationService
                 'shortToken' => $short,
             ];
         } catch (\Throwable $e) {
-            // 交易內會完整回復，不需額外處理計數回滾
+            // 交易失敗會整體回滾（包含 reserved 變動與 reservation 建立），不需額外處理
             throw $e;
         } finally {
-            // 5) 釋放短鎖
+            // 6) 釋放短鎖（確保最終一定解鎖）
             Redis::del($lockKey);
         }
     }
@@ -161,6 +167,7 @@ class ReservationService
             ->where('user_id', $userId)
             ->firstOrFail();
 
+        // 僅對已確認的訂位執行取消（冪等：重複取消不動作）
         if ($res->status !== ReservationStatus::CONFIRMED) return;
 
         DB::transaction(function () use ($res) {
@@ -171,6 +178,7 @@ class ReservationService
                 'timeslot'      => $res->timeslot,
                 'party_size'    => $res->party_size,
             ])->lockForUpdate()->first();
+            // 強一致還位：行鎖 + reserved>0 才遞減，避免負數
             if ($slot && $slot->reserved > 0) {
                 $slot->reserved -= 1;
                 $slot->save();

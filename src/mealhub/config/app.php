@@ -41,6 +41,9 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    // Whether to include exception/meta details in API responses even when debug is off
+    'error_verbose' => (bool) env('API_ERROR_VERBOSE', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application URL

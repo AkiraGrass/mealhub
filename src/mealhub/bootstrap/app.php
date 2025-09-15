@@ -25,62 +25,54 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Validation errors -> 9999 with 422
+        $verbose = (bool) config('app.error_verbose');
+        // Validation errors -> 9999 with 422 (always JSON)
         $exceptions->render(function (ValidationException $e, $request) {
-            if (!$request->expectsJson()) {
-                return null;
-            }
             return ApiResponse::validationError($e->errors());
         });
 
-        // Authentication -> 9999 with 401
+        // Authentication -> 9999 with 401 (always JSON)
         $exceptions->render(function (AuthenticationException $e, $request) {
-            if (!$request->expectsJson()) {
-                return null;
-            }
             return ApiResponse::error(Status::FAILURE, 'unauthorized');
         });
 
-        // Authorization -> 9999 with 403
+        // Authorization -> 9999 with 403 (always JSON)
         $exceptions->render(function (AuthorizationException $e, $request) {
-            if (!$request->expectsJson()) {
-                return null;
-            }
             return ApiResponse::error(Status::FAILURE, 'forbidden');
         });
 
-        // 404 Not Found -> 9999 with 404
+        // 404 Not Found -> 9999 with 404 (always JSON)
         $exceptions->render(function (NotFoundHttpException $e, $request) {
-            if (!$request->expectsJson()) {
-                return null;
-            }
             return ApiResponse::error(Status::FAILURE, 'notFound');
         });
 
         // Generic HTTP exceptions -> 9999 with mapped http (fallback 500)
-        $exceptions->render(function (HttpExceptionInterface $e, $request) {
-            if (!$request->expectsJson()) {
-                return null;
-            }
-            $meta = null;
-            if (config('app.debug')) {
-                $meta = ['http_status' => $e->getStatusCode()];
-            }
-            return ApiResponse::error(Status::FAILURE, 'serverError', null, null, $meta);
+        $exceptions->render(function (HttpExceptionInterface $e, $request) use ($verbose) {
+            $statusCode = $e->getStatusCode();
+            $meta = $verbose || config('app.debug') ? ['http_status' => $statusCode] : null;
+
+            // Map common HTTP status codes to message keys
+            $messageKey = match ($statusCode) {
+                400 => 'badRequest',
+                401 => 'unauthorized',
+                403 => 'forbidden',
+                404 => 'notFound',
+                405 => 'methodNotAllowed',
+                409 => 'conflict',
+                422 => 'validationError',
+                429 => 'tooManyRequests',
+                default => $statusCode >= 500 ? 'serverError' : 'failure',
+            };
+
+            return ApiResponse::error(Status::FAILURE, $messageKey, null, null, $meta);
         });
 
         // Fallback: any other Throwable -> 9999 with 500
-        $exceptions->render(function (Throwable $e, $request) {
-            if (!$request->expectsJson()) {
-                return null;
-            }
-            $meta = null;
-            if (config('app.debug')) {
-                $meta = [
-                    'exception' => get_class($e),
-                    'message'   => $e->getMessage(),
-                ];
-            }
+        $exceptions->render(function (Throwable $e, $request) use ($verbose) {
+            $meta = $verbose || config('app.debug') ? [
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+            ] : null;
             return ApiResponse::error(Status::FAILURE, 'serverError', null, null, $meta);
         });
     })->create();

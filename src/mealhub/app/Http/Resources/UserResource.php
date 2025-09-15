@@ -15,7 +15,8 @@ class UserResource extends JsonResource
             'lastName'  => $user->last_name,
             'email'     => $user->email,
             'phone'     => $user->phone,
-            'status'    => $user->status,
+            // Ensure enum is serialized as string value to avoid JSON errors
+            'status'    => $user->status?->value,
         ];
     }
 }
