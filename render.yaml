@@ -7,12 +7,9 @@ envVarGroups:
 services:
   - type: web
     name: mealhub-web
-    env: php
-    rootDirectory: src/mealhub
-    buildCommand: |
-      # 只安裝 PHP 依賴；目前不需前端建置（純 API）
-      composer install --no-dev --optimize-autoloader
-    startCommand: bash render-start.sh
+    env: docker
+    rootDirectory: .
+    dockerfilePath: ./Dockerfile
     autoDeploy: true
     healthCheckPath: /
     envVarGroups:
@@ -58,11 +55,10 @@ services:
 
   - type: worker
     name: mealhub-worker
-    env: php
-    rootDirectory: src/mealhub
-    buildCommand: |
-      composer install --no-dev --optimize-autoloader
-    startCommand: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    env: docker
+    rootDirectory: .
+    dockerfilePath: ./Dockerfile
+    dockerCommand: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
     autoDeploy: true
     envVarGroups:
       - mealhub-common
@@ -95,11 +91,10 @@ services:
 
   - type: worker
     name: mealhub-scheduler
-    env: php
-    rootDirectory: src/mealhub
-    buildCommand: |
-      composer install --no-dev --optimize-autoloader
-    startCommand: php artisan schedule:work
+    env: docker
+    rootDirectory: .
+    dockerfilePath: ./Dockerfile
+    dockerCommand: php artisan schedule:work
     autoDeploy: true
     envVarGroups:
       - mealhub-common
