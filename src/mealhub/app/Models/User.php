@@ -2,10 +2,13 @@
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Enums\UserStatus;
 
 class User extends Authenticatable
 {
+    use HasFactory;
+
     protected $table      = 'users';
     protected $primaryKey = 'id';
 
