@@ -49,6 +49,7 @@ RUN chmod +x /entrypoint.sh
 RUN adduser -D -H -u 1000 appuser \
  && mkdir -p storage/logs bootstrap/cache \
  && chown -R www-data:www-data storage bootstrap/cache \
+ && chmod -R ug+rwX storage bootstrap/cache \
  && mkdir -p /run/nginx /var/log/nginx /var/cache/nginx /var/log/supervisor
 
 ENV PORT=8080 APP_ENV=production APP_DEBUG=false
