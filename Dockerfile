@@ -2,7 +2,10 @@
 # Builder: Composer 依賴（僅建置期）
 # - 在獨立階段安裝 vendor，避免最終映像過大
 ############################
-FROM composer:2 AS composer_deps
+FROM php:8.3-cli-alpine AS composer_deps
+ENV COMPOSER_ALLOW_SUPERUSER=1
+RUN apk add --no-cache git zip unzip \
+ && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 WORKDIR /app
 # Copy full app to ensure Composer scripts (artisan) can run
 COPY src/mealhub/ ./
