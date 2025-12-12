@@ -1,0 +1,52 @@
+name: Deploy to Lightsail  # Workflow 名稱，顯示於 GitHub Actions UI
+
+on:
+  push:
+    branches:
+      - main           # 只要推到 main 分支就會觸發
+  workflow_dispatch:      # 也支援手動觸發
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}                  # 透過 Secrets 設定 AWS Region
+  LIGHTSAIL_SERVICE_NAME: ${{ secrets.LIGHTSAIL_SERVICE_NAME }}  # Lightsail Container Service 名稱
+  LIGHTSAIL_CONTAINER_NAME: mealhub-app                  # 容器在 service 中的名稱
+  IMAGE_LABEL: ${{ github.sha }}                         # 使用 commit SHA 當 image tag
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials  # 讓後續步驟可呼叫 AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Build Docker image        # 建置可部署的容器映像
+        run: |
+          docker build -t $LIGHTSAIL_SERVICE_NAME:$IMAGE_LABEL .
+
+      - name: Push container image to Lightsail  # 將映像推送到 Lightsail registry
+        run: |
+          aws lightsail push-container-image \
+            --service-name $LIGHTSAIL_SERVICE_NAME \
+            --label $IMAGE_LABEL \
+            --image $LIGHTSAIL_SERVICE_NAME:$IMAGE_LABEL
+
+      - name: Render container definition  # 將容器樣板插入實際 image tag
+        run: |
+          IMAGE_REF="$LIGHTSAIL_SERVICE_NAME:$IMAGE_LABEL"
+          sed "s|__IMAGE_NAME__|$IMAGE_REF|g" lightsail/containers.json > lightsail/containers.rendered.json
+
+      - name: Deploy new revision         # 用剛產生的 JSON 部署新版本
+        run: |
+          aws lightsail create-container-service-deployment \
+            --service-name $LIGHTSAIL_SERVICE_NAME \
+            --containers file://lightsail/containers.rendered.json \
+            --public-endpoint file://lightsail/public-endpoint.json

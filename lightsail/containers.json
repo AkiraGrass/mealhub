@@ -1,0 +1,14 @@
+{
+  "mealhub-app": {
+    "image": "__IMAGE_NAME__",
+    "ports": {
+      "8080": "HTTP"
+    },
+    "environment": {
+      "APP_ENV": "production",
+      "LOG_CHANNEL": "stack",
+      "LOG_STACK": "stderr",
+      "LOG_LEVEL": "info"
+    }
+  }
+}
