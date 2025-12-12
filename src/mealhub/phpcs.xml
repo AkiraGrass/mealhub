@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<ruleset name="Mealhub Standard">
+    <description>Laravel project coding standard.</description>
+
+    <rule ref="PSR12"/>
+</ruleset>

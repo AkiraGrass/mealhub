@@ -1,0 +1,33 @@
+name: Deploy to Render
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 可選：快速健檢（如有 composer.json，可開啟）
+      # - name: Setup PHP
+      #   uses: shivammathur/setup-php@v2
+      #   with:
+      #     php-version: '8.2'
+      #     coverage: none
+      # - name: Validate composer.json
+      #   if: ${{ hashFiles('**/composer.json') != '' }}
+      #   run: composer validate --no-check-all
+
+      - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Missing secret RENDER_DEPLOY_HOOK_URL" >&2
+            exit 1
+          fi
+          echo "Triggering Render deploy..."
+          curl -f -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Deploy triggered. View progress in Render dashboard."

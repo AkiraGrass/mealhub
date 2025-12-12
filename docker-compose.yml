@@ -1,0 +1,138 @@
+services:
+  app:
+    # 如果已經有 PHP-FPM 的 Dockerfile，請在此指定。
+    # 否則請維持使用 php:8.3-fpm，並在 Dockerfile 中安裝所需擴充功能。
+    build:
+      context: .
+      dockerfile: docker/php-fpm/Dockerfile
+    image: php:8.2-fpm-alpine
+    
+    working_dir: /var/www/html
+    volumes:
+      - ./src/mealhub:/var/www/html
+    environment:
+      # 這些為常見的 Laravel 環境變數，請確認 .env 保持一致
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost
+      # 郵件預設導向 MailHog
+      MAIL_MAILER: smtp
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      MAIL_USERNAME: null
+      MAIL_PASSWORD: null
+      MAIL_ENCRYPTION: null
+    networks:
+      - mealhub_net
+    depends_on:
+      - db
+      - redis
+
+  scheduler:
+    # 排程器沿用與應用程式相同的 PHP 映像與建置
+    build:
+      context: .
+      dockerfile: docker/php-fpm/Dockerfile
+    image: php:8.2-fpm-alpine
+    
+    working_dir: /var/www/html
+    command: php artisan schedule:work
+    volumes:
+      - ./src/mealhub:/var/www/html
+    restart: unless-stopped
+    networks:
+      - mealhub_net
+    depends_on:
+      - app
+      - db
+
+  nginx:
+    image: nginx:1.25-alpine
+    
+    ports:
+      - "8080:80" 
+      - "80:80"
+    volumes:
+      - ./src/mealhub/public:/var/www/html/public:ro
+      - ./docker/nginx:/etc/nginx/conf.d:ro
+    depends_on:
+      - app
+    networks:
+      - mealhub_net
+
+  db:
+    image: postgres:16-alpine
+    
+    environment:
+      POSTGRES_DB: mealhub
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - mealhub_net
+      
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"   # 本機要連再開，僅容器內用可省略
+    networks:
+      - mealhub_net
+    restart: unless-stopped
+
+  mailhog:
+    image: axllent/mailpit:latest
+    
+    ports:
+      - "1025:1025"  # SMTP 服務
+      - "8025:8025"  # 網頁介面
+    networks:
+      - mealhub_net
+
+  loki:
+    image: grafana/loki:2.9.5
+    
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./docker/monitoring/loki:/etc/loki:ro
+    ports:
+      - "3100:3100"
+    networks:
+      - mealhub_net
+
+  promtail:
+    image: grafana/promtail:2.9.5
+    
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./docker/monitoring/promtail/config.yml:/etc/promtail/config.yml:ro
+      - ./src/mealhub/storage/logs:/var/log/laravel:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - mealhub_net
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - mealhub_net
+    depends_on:
+      - loki
+
+volumes:
+  db-data:
+  grafana-data:
+
+networks:
+  mealhub_net:
+    driver: bridge
