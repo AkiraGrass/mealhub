@@ -4,7 +4,7 @@ Laravel 12 應用程式，提供餐廳與訂位 API。專案附有 Docker 開發
 
 ## 本機開發
 
-1. 建立 `.env`：`cp src/mealhub/.env.example src/mealhub/.env`，再依需求調整資料庫 / Redis / JWT 等設定。
+1. 建立 `.env`：`cp src/mealhub/.env.example src/mealhub/.env`，再依需求調整資料庫 / Redis / JWT 等設定（建議只維護 `src/mealhub/.env`，避免在 repo 根目錄放 runtime secrets）。
 2. 啟動 docker-compose：
    ```bash
    make init        # 首次：up + install + migrate --seed
@@ -53,6 +53,7 @@ Laravel 12 應用程式，提供餐廳與訂位 API。專案附有 Docker 開發
 | 路徑 | 說明 |
 | --- | --- |
 | `Dockerfile` | multi-stage build，內含 nginx + php-fpm + supervisor |
+| `.dockerignore` | 排除 `.env`、vendor、logs 等不需進入 image context 的檔案 |
 | `docker-compose.yml` | 本機開發使用的完整疊代（Postgres、Redis、Grafana…） |
 | `lightsail/containers.json` | Lightsail 容器定義樣板（CI 會套入 image） |
 | `lightsail/public-endpoint.json` | Lightsail 公開端點與健康檢查設定 |

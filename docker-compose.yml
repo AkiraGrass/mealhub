@@ -1,4 +1,5 @@
 services:
+  # --- PHP 應用程式（Laravel API，本體） ---
   app:
     # 如果已經有 PHP-FPM 的 Dockerfile，請在此指定。
     # 否則請維持使用 php:8.3-fpm，並在 Dockerfile 中安裝所需擴充功能。
@@ -25,9 +26,11 @@ services:
     networks:
       - mealhub_net
     depends_on:
+      # PHP-FPM 需要資料庫與快取後端才有辦法啟動完整功能
       - db
       - redis
 
+  # --- Laravel scheduler：執行 cron queue（artisan schedule:work） ---
   scheduler:
     # 排程器沿用與應用程式相同的 PHP 映像與建置
     build:
@@ -43,9 +46,10 @@ services:
     networks:
       - mealhub_net
     depends_on:
-      - app
-      - db
+      - app   # 讀取專案程式碼與 config
+      - db    # schedule job 常會連資料庫
 
+  # --- Nginx 反向代理，提供對外 HTTP 入口 ---
   nginx:
     image: nginx:1.25-alpine
     
@@ -53,13 +57,14 @@ services:
       - "8080:80" 
       - "80:80"
     volumes:
-      - ./src/mealhub/public:/var/www/html/public:ro
-      - ./docker/nginx:/etc/nginx/conf.d:ro
+      - ./src/mealhub/public:/var/www/html/public:ro   # 只需要公開資產
+      - ./docker/nginx:/etc/nginx/conf.d:ro            # 自訂 server 區塊
     depends_on:
-      - app
+      - app   # 轉發 PHP 流量需要 app 服務已就緒
     networks:
       - mealhub_net
 
+  # --- PostgreSQL 資料庫 ---
   db:
     image: postgres:16-alpine
     
@@ -70,10 +75,11 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5432:5432"   # 方便本機 DB 工具連線
     networks:
       - mealhub_net
       
+  # --- Redis 快取/佇列 broker ---
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "no"]
@@ -83,6 +89,7 @@ services:
       - mealhub_net
     restart: unless-stopped
 
+  # --- Mailpit（Mailhog 後續版本）：收信測試工具 ---
   mailhog:
     image: axllent/mailpit:latest
     
@@ -92,6 +99,7 @@ services:
     networks:
       - mealhub_net
 
+  # --- Loki（log database） ---
   loki:
     image: grafana/loki:2.9.5
     
@@ -103,6 +111,7 @@ services:
     networks:
       - mealhub_net
 
+  # --- Promtail：把容器與 Laravel log 推進 Loki ---
   promtail:
     image: grafana/promtail:2.9.5
     
@@ -117,6 +126,7 @@ services:
     depends_on:
       - loki
 
+  # --- Grafana（儀表板） ---
   grafana:
     image: grafana/grafana:11.0.0
     
@@ -130,9 +140,9 @@ services:
       - loki
 
 volumes:
-  db-data:
-  grafana-data:
+  db-data:       # Postgres 永久資料
+  grafana-data:  # Grafana dashboard、使用者設定
 
 networks:
   mealhub_net:
-    driver: bridge
+    driver: bridge   # 預設 bridge，方便容器間互連
