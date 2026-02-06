@@ -10,8 +10,8 @@ use App\Repositories\AuthTokenRepository;
 class AuthService
 {
     public function __construct(
-        private JwtService $jwt,
-        private AuthTokenRepository $tokens
+        private JwtService $jwtService,
+        private AuthTokenRepository $authTokenRepository
     )
     {
     }
@@ -34,17 +34,17 @@ class AuthService
             throw new \InvalidArgumentException('invalid_credentials');
         }
 
-        $accessToken = $this->jwt->issueAccessToken($user->id, ['scope' => ['user']]);
+        $accessToken = $this->jwtService->issueAccessToken($user->id, ['scope' => ['user']]);
 
         // 產生 Refresh Token：
         // - 使用 CSPRNG `random_bytes(32)` 取得 32 bytes 真隨機，再轉 64 字元 hex 字串。
         // - 只儲存雜湊（token 本體僅回傳給客戶端一次），降低洩漏風險。
         $refreshToken        = bin2hex(random_bytes(32));
         $refreshTokenHash    = hash('sha256', $refreshToken);
-        $tokenFamilyId       = $this->jwt->uuid();
+        $tokenFamilyId       = $this->jwtService->uuid();
         $refreshTokenTtlDays = (int) env('JWT_REFRESH_TTL_DAYS', 14);
 
-        $this->tokens->create([
+        $this->authTokenRepository->create([
             'user_id'         => $user->id,
             'token_hash'      => $refreshTokenHash,
             'token_family_id' => $tokenFamilyId,
@@ -74,14 +74,14 @@ class AuthService
     public function refresh(string $refreshToken, string $ip): array
     {
         $refreshTokenHash  = hash('sha256', $refreshToken);
-        $refreshTokenRecord = $this->tokens->findByHash($refreshTokenHash);
+        $refreshTokenRecord = $this->authTokenRepository->findByHash($refreshTokenHash);
 
         if (!$refreshTokenRecord || $refreshTokenRecord->revoked_at || $refreshTokenRecord->expires_at->isPast()) {
             throw new \InvalidArgumentException('invalid_refresh_token');
         }
 
         if ($refreshTokenRecord->replaced_by_id) {
-            $this->tokens->revokeFamily($refreshTokenRecord->token_family_id);
+            $this->authTokenRepository->revokeFamily($refreshTokenRecord->token_family_id);
             throw new \InvalidArgumentException('refresh_token_replayed');
         }
 
@@ -104,9 +104,9 @@ class AuthService
         ]);
 
         // 以交易確保「新增新 token」與「標記舊 token 已被替換」的原子性
-        $this->tokens->saveReplacement($refreshTokenRecord, $newRefreshRecord);
+        $this->authTokenRepository->saveReplacement($refreshTokenRecord, $newRefreshRecord);
 
-        $accessToken = $this->jwt->issueAccessToken($refreshTokenRecord->user_id, ['scope' => ['user']]);
+        $accessToken = $this->jwtService->issueAccessToken($refreshTokenRecord->user_id, ['scope' => ['user']]);
 
         return [
             'accessToken'  => $accessToken,
@@ -123,17 +123,17 @@ class AuthService
     public function logout(string $refreshToken, ?string $authorizationHeader): void
     {
         $refreshTokenHash = hash('sha256', $refreshToken);
-        $this->tokens->revokeByHash($refreshTokenHash);
+        $this->authTokenRepository->revokeByHash($refreshTokenHash);
 
         if ($authorizationHeader && str_starts_with($authorizationHeader, 'Bearer ')) {
             $accessToken = substr($authorizationHeader, 7);
             try {
-                $payload = $this->jwt->decode($accessToken);
+                $payload = $this->jwtService->decode($accessToken);
                 $jti     = $payload['jti'] ?? null;
                 $userId  = $payload['sub'] ?? null;
                 $exp     = $payload['exp'] ?? null;
                 if ($jti && $userId && $exp) {
-                    $this->tokens->upsertBlocklistedAccessToken($jti, (int) $userId, (int) $exp);
+                    $this->authTokenRepository->upsertBlocklistedAccessToken($jti, (int) $userId, (int) $exp);
                 }
             } catch (\Throwable $e) {
                 // 這裡只盡力寫入黑名單，寫失敗也不能讓使用者登出卡住
@@ -148,9 +148,9 @@ class AuthService
     public function logoutAll(int $userId): void
     {
         // 撤銷所有 refresh tokens
-        $this->tokens->revokeByUser($userId);
+        $this->authTokenRepository->revokeByUser($userId);
 
         // 設置使用者層級的切點，讓所有已發出的 access tokens 立即失效
-        $this->tokens->invalidateUserTokens($userId);
+        $this->authTokenRepository->invalidateUserTokens($userId);
     }
 }
