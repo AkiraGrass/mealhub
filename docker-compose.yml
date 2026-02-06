@@ -69,9 +69,9 @@ services:
     image: postgres:16-alpine
     
     environment:
-      POSTGRES_DB: mealhub
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: ${DB_DATABASE:-mealhub}
+      POSTGRES_USER: ${DB_USERNAME:-mealhub}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mealhub}
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:

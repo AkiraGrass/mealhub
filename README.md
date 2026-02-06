@@ -4,7 +4,7 @@ Laravel 12 應用程式，提供餐廳與訂位 API。專案附有 Docker 開發
 
 ## 本機開發
 
-1. 建立 `.env`：`cp src/mealhub/.env.example src/mealhub/.env`，再依需求調整資料庫 / Redis / JWT 等設定（建議只維護 `src/mealhub/.env`，避免在 repo 根目錄放 runtime secrets）。
+1. 建立 `.env`：`cp src/mealhub/.env.example src/mealhub/.env`，再依需求調整資料庫 / Redis / JWT 等設定（建議只維護 `src/mealhub/.env`，避免在 repo 根目錄放 runtime secrets）。Docker Compose 指令會自動載入此檔案中的 `DB_*`/`REDIS_*` 等變數，確保容器與應用程式使用同一組帳號密碼。
 2. 啟動 docker-compose：
    ```bash
    make init        # 首次：up + install + migrate --seed

@@ -1,53 +1,55 @@
 SHELL := /bin/bash
+ENV_FILE := $(shell [ -f src/mealhub/.env ] && echo "--env-file src/mealhub/.env")
+COMPOSE := docker compose $(ENV_FILE)
 
 .PHONY: up down build rebuild init logs sh tinker migrate seed fresh test reset
 
 up:
-	@docker compose up -d
+	@$(COMPOSE) up -d
 
 down:
-	@docker compose down
+	@$(COMPOSE) down
 
 build:
-	@docker compose build
+	@$(COMPOSE) build
 
 rebuild:
-	@docker compose build --no-cache
+	@$(COMPOSE) build --no-cache
 
 init:
-	@docker compose up -d
+	@$(COMPOSE) up -d
 	@sleep 5
-	@docker compose exec app composer install || true
-	@docker compose exec app php artisan key:generate || true
-	@docker compose exec app php artisan migrate --seed || true
+	@$(COMPOSE) exec app composer install || true
+	@$(COMPOSE) exec app php artisan key:generate || true
+	@$(COMPOSE) exec app php artisan migrate --seed || true
 
 logs:
-	@docker compose logs -f --tail=200
+	@$(COMPOSE) logs -f --tail=200
 
 sh:
-	@docker compose exec app bash
+	@$(COMPOSE) exec app bash
 
 tinker:
-	@docker compose exec app php artisan tinker
+	@$(COMPOSE) exec app php artisan tinker
 
 migrate:
-	@docker compose exec app php artisan migrate
+	@$(COMPOSE) exec app php artisan migrate
 
 seed:
-	@docker compose exec app php artisan db:seed
+	@$(COMPOSE) exec app php artisan db:seed
 
 fresh:
-	@docker compose exec app php artisan migrate:fresh --seed
+	@$(COMPOSE) exec app php artisan migrate:fresh --seed
 
 test:
-	@docker compose exec app php artisan test --parallel
+	@$(COMPOSE) exec app php artisan test --parallel
 
 reset:
-	@docker compose down -v
-	@docker compose up -d
+	@$(COMPOSE) down -v
+	@$(COMPOSE) up -d
 	@sleep 5
-	@docker compose exec app composer install || true
-	@docker compose exec app php artisan migrate:fresh --seed || true
+	@$(COMPOSE) exec app composer install || true
+	@$(COMPOSE) exec app php artisan migrate:fresh --seed || true
 
 ps:
-	@docker compose ps
+	@$(COMPOSE) ps
