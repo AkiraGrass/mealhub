@@ -2,15 +2,17 @@
 
 namespace App\Services;
 
-use App\Models\AuthToken;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Carbon\Carbon;
+use App\Models\AuthToken;
+use App\Repositories\AuthTokenRepository;
 
 class AuthService
 {
-    public function __construct(private JwtService $jwt)
+    public function __construct(
+        private JwtService $jwt,
+        private AuthTokenRepository $tokens
+    )
     {
     }
 
@@ -42,7 +44,7 @@ class AuthService
         $tokenFamilyId       = $this->jwt->uuid();
         $refreshTokenTtlDays = (int) env('JWT_REFRESH_TTL_DAYS', 14);
 
-        AuthToken::create([
+        $this->tokens->create([
             'user_id'         => $user->id,
             'token_hash'      => $refreshTokenHash,
             'token_family_id' => $tokenFamilyId,
@@ -72,16 +74,14 @@ class AuthService
     public function refresh(string $refreshToken, string $ip): array
     {
         $refreshTokenHash  = hash('sha256', $refreshToken);
-        $refreshTokenRecord = AuthToken::where('token_hash', $refreshTokenHash)->first();
+        $refreshTokenRecord = $this->tokens->findByHash($refreshTokenHash);
 
         if (!$refreshTokenRecord || $refreshTokenRecord->revoked_at || $refreshTokenRecord->expires_at->isPast()) {
             throw new \InvalidArgumentException('invalid_refresh_token');
         }
 
         if ($refreshTokenRecord->replaced_by_id) {
-            AuthToken::where('token_family_id', $refreshTokenRecord->token_family_id)
-                ->whereNull('revoked_at')
-                ->update(['revoked_at' => now()]);
+            $this->tokens->revokeFamily($refreshTokenRecord->token_family_id);
             throw new \InvalidArgumentException('refresh_token_replayed');
         }
 
@@ -104,10 +104,7 @@ class AuthService
         ]);
 
         // 以交易確保「新增新 token」與「標記舊 token 已被替換」的原子性
-        DB::transaction(function () use ($refreshTokenRecord, $newRefreshRecord) {
-            $newRefreshRecord->save();
-            $refreshTokenRecord->update(['replaced_by_id' => $newRefreshRecord->id, 'last_used_at' => now()]);
-        });
+        $this->tokens->saveReplacement($refreshTokenRecord, $newRefreshRecord);
 
         $accessToken = $this->jwt->issueAccessToken($refreshTokenRecord->user_id, ['scope' => ['user']]);
 
@@ -126,9 +123,7 @@ class AuthService
     public function logout(string $refreshToken, ?string $authorizationHeader): void
     {
         $refreshTokenHash = hash('sha256', $refreshToken);
-        AuthToken::where('token_hash', $refreshTokenHash)
-            ->whereNull('revoked_at')
-            ->update(['revoked_at' => now()]);
+        $this->tokens->revokeByHash($refreshTokenHash);
 
         if ($authorizationHeader && str_starts_with($authorizationHeader, 'Bearer ')) {
             $accessToken = substr($authorizationHeader, 7);
@@ -138,19 +133,10 @@ class AuthService
                 $userId  = $payload['sub'] ?? null;
                 $exp     = $payload['exp'] ?? null;
                 if ($jti && $userId && $exp) {
-                    DB::table('auth_token_blocklist')->updateOrInsert(
-                        ['jti' => $jti],
-                        [
-                            'user_id'   => (int) $userId,
-                            'revoked_at'=> now(),
-                            'expires_at'=> Carbon::createFromTimestamp($exp),
-                            'updated_at'=> now(),
-                            'created_at'=> now(),
-                        ]
-                    );
+                    $this->tokens->upsertBlocklistedAccessToken($jti, (int) $userId, (int) $exp);
                 }
             } catch (\Throwable $e) {
-                // 最佳努力寫入黑名單，失敗不阻塞使用者登出流程
+                // 這裡只盡力寫入黑名單，寫失敗也不能讓使用者登出卡住
             }
         }
     }
@@ -162,13 +148,9 @@ class AuthService
     public function logoutAll(int $userId): void
     {
         // 撤銷所有 refresh tokens
-        AuthToken::where('user_id', $userId)
-            ->whereNull('revoked_at')
-            ->update(['revoked_at' => now()]);
+        $this->tokens->revokeByUser($userId);
 
         // 設置使用者層級的切點，讓所有已發出的 access tokens 立即失效
-        DB::table('users')
-            ->where('id', $userId)
-            ->update(['tokens_invalidated_at' => now(), 'updated_at' => now()]);
+        $this->tokens->invalidateUserTokens($userId);
     }
 }
