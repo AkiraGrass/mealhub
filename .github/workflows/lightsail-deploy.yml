@@ -23,21 +23,21 @@ jobs:
       contents: read
       packages: read
     steps:
-      - name: Checkout
+      - name: 檢出程式碼
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
 
-      - name: Set up Docker Buildx
+      - name: 設定 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Setup PHP for tests
+      - name: 設定測試用 PHP 環境
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
           extensions: mbstring, intl, pdo_pgsql, pdo_mysql
 
-      - name: Cache Composer dependencies
+      - name: 快取 Composer 依賴
         uses: actions/cache@v4
         with:
           path: |
@@ -47,7 +47,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-composer-
 
-      - name: Install dependencies & run PHPUnit
+      - name: 安裝依賴並執行 PHPUnit 測試
         working-directory: src/mealhub
         run: |
           composer install --no-interaction --prefer-dist
@@ -55,7 +55,7 @@ jobs:
           php artisan key:generate --force
           php artisan test
 
-      - name: Build Docker image        # 建置可部署的容器映像（使用 cache）
+      - name: 建置 Docker 映像檔        # 建置可部署的容器映像（使用 cache）
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -65,11 +65,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Export Docker image
+      - name: 匯出 Docker 映像檔
         run: |
           docker save $IMAGE_NAME:$IMAGE_LABEL | gzip > image.tar.gz
 
-      - name: Upload image to VM
+      - name: 上傳映像檔至虛擬機
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
@@ -78,7 +78,7 @@ jobs:
           source: "image.tar.gz"
           target: "/tmp"
 
-      - name: Deploy on VM
+      - name: 在虛擬機上部署
         uses: appleboy/ssh-action@v1.0.3
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
