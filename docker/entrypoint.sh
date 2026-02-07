@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 如果未提供 PORT，則使用預設值 8080 (Render 會設定 $PORT)
+# 如果未提供 PORT，則使用預設值 8080 (Cloud 平台通常會設定 $PORT)
 export PORT="${PORT:-8080}"
 
 cd /var/www/html
@@ -14,7 +14,7 @@ fi
 # 2) 如果未提供 APP_URL，則預設為 http://localhost:$PORT
 export APP_URL="${APP_URL:-http://localhost:${PORT}}"
 
-# 2.5) 預設將日誌輸出到 stderr，以便顯示在容器 stdout/stderr 中 (適用於 Render Logs)
+# 2.5) 預設將日誌輸出到 stderr，以便顯示在容器 stdout/stderr 中 (適用於 Cloud Logs)
 export LOG_CHANNEL="${LOG_CHANNEL:-stderr}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 # 如果有提供 JSON formatter，Laravel 將通過 config/logging.php 使用它
