@@ -68,8 +68,11 @@ fi
 # 強制刪除任何舊的 default.conf，確保只使用我們的模板
 rm -f /etc/nginx/conf.d/default.conf
 
+# Default App_Host to 127.0.0.1 (local php-fpm in single container) if not set
+export App_Host="${App_Host:-127.0.0.1}"
+
 if [ -f /etc/nginx/conf.d/default.conf.template ]; then
-  envsubst '$PORT' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
+  envsubst '$PORT $App_Host' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
 fi
 
 # Validate Nginx configuration early for clearer errors

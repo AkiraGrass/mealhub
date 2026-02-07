@@ -37,7 +37,7 @@ services:
       context: .
       dockerfile: docker/php-fpm/Dockerfile
     image: mealhub-php
-    
+
     working_dir: /var/www/html
     command: php artisan schedule:work
     volumes:
@@ -46,28 +46,31 @@ services:
     networks:
       - mealhub_net
     depends_on:
-      - app   # 讀取專案程式碼與 config
-      - db    # schedule job 常會連資料庫
+      - app # 讀取專案程式碼與 config
+      - db # schedule job 常會連資料庫
 
   # --- Nginx 反向代理，提供對外 HTTP 入口 ---
   nginx:
     image: nginx:1.25-alpine
-    
+
     ports:
-      - "8080:80" 
+      - "8080:80"
       - "80:80"
     volumes:
-      - ./src/mealhub/public:/var/www/html/public:ro   # 只需要公開資產
-      - ./docker/nginx:/etc/nginx/conf.d:ro            # 自訂 server 區塊
+      - ./src/mealhub/public:/var/www/html/public:ro # 只需要公開資產
+      - ./docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro # 使用 templates 自動生成配置
+    environment:
+      - PORT=80 # 設定 Nginx 監聽端口
+      - App_Host=app # 設定 PHP-FPM 主機 (docker-compose service name)
     depends_on:
-      - app   # 轉發 PHP 流量需要 app 服務已就緒
+      - app # 轉發 PHP 流量需要 app 服務已就緒
     networks:
       - mealhub_net
 
   # --- PostgreSQL 資料庫 ---
   db:
     image: postgres:16-alpine
-    
+
     environment:
       POSTGRES_DB: ${DB_DATABASE:-mealhub}
       POSTGRES_USER: ${DB_USERNAME:-mealhub}
@@ -75,16 +78,16 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"   # 方便本機 DB 工具連線
+      - "5432:5432" # 方便本機 DB 工具連線
     networks:
       - mealhub_net
-      
+
   # --- Redis 快取/佇列 broker ---
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "no"]
+    command: [ "redis-server", "--appendonly", "no" ]
     ports:
-      - "6379:6379"   # 本機要連再開，僅容器內用可省略
+      - "6379:6379" # 本機要連再開，僅容器內用可省略
     networks:
       - mealhub_net
     restart: unless-stopped
@@ -92,17 +95,17 @@ services:
   # --- Mailpit（Mailhog 後續版本）：收信測試工具 ---
   mailhog:
     image: axllent/mailpit:latest
-    
+
     ports:
-      - "1025:1025"  # SMTP 服務
-      - "8025:8025"  # 網頁介面
+      - "1025:1025" # SMTP 服務
+      - "8025:8025" # 網頁介面
     networks:
       - mealhub_net
 
   # --- Loki（log database） ---
   loki:
     image: grafana/loki:2.9.5
-    
+
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./docker/monitoring/loki:/etc/loki:ro
@@ -114,7 +117,7 @@ services:
   # --- Promtail：把容器與 Laravel log 推進 Loki ---
   promtail:
     image: grafana/promtail:2.9.5
-    
+
     command: -config.file=/etc/promtail/config.yml
     volumes:
       - ./docker/monitoring/promtail/config.yml:/etc/promtail/config.yml:ro
@@ -129,7 +132,7 @@ services:
   # --- Grafana（儀表板） ---
   grafana:
     image: grafana/grafana:11.0.0
-    
+
     ports:
       - "3000:3000"
     volumes:
@@ -140,9 +143,10 @@ services:
       - loki
 
 volumes:
-  db-data:       # Postgres 永久資料
-  grafana-data:  # Grafana dashboard、使用者設定
+  db-data: # Postgres 永久資料
+  grafana-data:
+    # Grafana dashboard、使用者設定
 
 networks:
   mealhub_net:
-    driver: bridge   # 預設 bridge，方便容器間互連
+    driver: bridge # 預設 bridge，方便容器間互連
