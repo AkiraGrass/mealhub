@@ -65,6 +65,9 @@ if [ -f /etc/nginx/nginx.conf.template ]; then
   envsubst < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 fi
 
+# 強制刪除任何舊的 default.conf，確保只使用我們的模板
+rm -f /etc/nginx/conf.d/default.conf
+
 if [ -f /etc/nginx/conf.d/default.conf.template ]; then
   envsubst '$PORT' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
 fi
