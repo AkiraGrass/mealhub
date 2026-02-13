@@ -117,6 +117,7 @@ services:
   # --- Promtail：把容器與 Laravel log 推進 Loki ---
   promtail:
     image: grafana/promtail:2.9.5
+    user: "0:0" # 強制使用 Root 權限讀取 Docker logs
 
     command: -config.file=/etc/promtail/config.yml
     volumes:

@@ -10,46 +10,13 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  # 1) Collect Docker container JSON logs (json-file driver)
+  # 1) Collect Docker container JSON logs (direct file access)
   - job_name: docker
     static_configs:
       - targets: [localhost]
         labels:
           job: docker
-    docker_sd_configs:
-      - host: unix:///var/run/docker.sock
-        refresh_interval: 5s
-
-    pipeline_stages:
-      - docker: {}
-
-    relabel_configs:
-      # Ensure we always have a 'job' stream label
-      - action: replace
-        target_label: job
-        replacement: docker
-
-      # Avoid self-collection
-      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
-        regex: promtail
-        action: drop
-      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
-        regex: loki
-        action: drop
-
-      # Human-friendly labels
-      - source_labels: [__meta_docker_container_name]
-        regex: "/(.*)"
-        target_label: container
-      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
-        target_label: service
-      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
-        target_label: project
-
-      # Point to the Docker json log file
-      - source_labels: [__meta_docker_container_id]
-        target_label: __path__
-        replacement: /var/lib/docker/containers/$1/$1-json.log
+          __path__: /var/lib/docker/containers/*/*-json.log
 
   # 2) Collect Laravel application file logs
   - job_name: laravel-logs
