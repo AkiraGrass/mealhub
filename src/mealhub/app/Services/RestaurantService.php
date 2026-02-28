@@ -152,6 +152,14 @@ class RestaurantService
     }
 
     /**
+     * 取得單一餐廳
+     */
+    public function getById(int $restaurantId): Restaurant
+    {
+        return Restaurant::findOrFail($restaurantId);
+    }
+
+    /**
      * 更新餐廳可預約時段（start/end 陣列）。
      * 限制：若欲移除的時段目前存在有效訂位（CONFIRMED 且未過期），則拒絕。
      */

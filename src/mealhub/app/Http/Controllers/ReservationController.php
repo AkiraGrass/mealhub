@@ -8,7 +8,6 @@ use App\Http\Requests\ReservationCreateRequest;
 use App\Http\Requests\ReservationCancelRequest;
 use App\Http\Requests\ReservationUpdateRequest;
 use App\Services\ReservationService;
-use App\Models\Reservation;
 use Illuminate\Http\Request;
 
 /**
@@ -47,7 +46,7 @@ class ReservationController extends Controller
     /** 匿名以 code 查詢訂位 */
     public function showByCode(string $code)
     {
-        $res = Reservation::where('code', $code)->first();
+        $res = $this->service->findByCode($code);
         if (!$res) return ApiResponse::error(Status::FAILURE, 'notFound');
         return ApiResponse::success([
             'id' => $res->id,
@@ -62,7 +61,7 @@ class ReservationController extends Controller
     /** 匿名以短 token 查詢訂位 */
     public function showByShort(string $token)
     {
-        $res = Reservation::where('short_token', $token)->first();
+        $res = $this->service->findByShortToken($token);
         if (!$res) return ApiResponse::error(Status::FAILURE, 'notFound');
         return ApiResponse::success([
             'id' => $res->id,
@@ -94,9 +93,7 @@ class ReservationController extends Controller
         $userId = $request->attributes->get('auth_user_id') ?? $request->attributes->get('authUserId');
         if (!$userId) return ApiResponse::error(Status::FAILURE, 'unauthorized');
 
-        $items = \App\Models\Reservation::where('user_id', (int)$userId)
-            ->orderByDesc('created_at')
-            ->get(['id','restaurant_id as restaurantId','reserve_date as date','timeslot','party_size as partySize','status']);
+        $items = $this->service->listByUser((int) $userId);
         return ApiResponse::success($items);
     }
 
@@ -110,26 +107,16 @@ class ReservationController extends Controller
         if (!$userId) return ApiResponse::error(Status::FAILURE, 'unauthorized');
 
         $data = $request->validated();
-        $res = \App\Models\Reservation::where('id', (int)$data['reservationId'])
-            ->where('user_id', (int)$userId)
-            ->first();
-        if (!$res) return ApiResponse::error(Status::FAILURE, 'notFound');
-
-        // 判定是否有效（未取消且未過期）
-        $currentTimeslot = (string) $res->timeslot;
-        $endStr = null;
-        if (str_contains($currentTimeslot, '-')) {
-            [$startStr, $endStr] = explode('-', $currentTimeslot, 2);
+        try {
+            $res = $this->service->updateTimeslotForUser(
+                (int) $userId,
+                (int) $data['reservationId'],
+                $data['start'],
+                $data['end']
+            );
+        } catch (\InvalidArgumentException $e) {
+            return ApiResponse::error(Status::FAILURE, $e->getMessage());
         }
-        $now = now();
-        $endAt = $endStr ? now()->parse($res->reserve_date.' '.$endStr) : now()->parse($res->reserve_date.' 23:59');
-        $isActive = ($res->status === \App\Enums\ReservationStatus::CONFIRMED) && $now->lte($endAt);
-        if ($isActive) {
-            return ApiResponse::error(Status::FAILURE, 'cannotModifyTimeslotActive');
-        }
-
-        $newTimeslot = $data['start'].'-'.$data['end'];
-        $res->update(['timeslot' => $newTimeslot]);
 
         return ApiResponse::success([
             'id' => $res->id,

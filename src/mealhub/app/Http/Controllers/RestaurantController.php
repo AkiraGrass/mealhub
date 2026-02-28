@@ -17,7 +17,6 @@ use App\Http\Requests\RestaurantUpdateTimeslotsRequest;
 use App\Http\Requests\RestaurantUpdateRequest;
 use App\Http\Requests\RestaurantReservationsRequest;
 use Illuminate\Http\Request;
-use App\Models\Restaurant;
 
 /**
  * 餐廳 API 控制器
@@ -158,7 +157,7 @@ class RestaurantController extends Controller
     /** 顯示單一餐廳詳細（畫面顯示用） */
     public function show($restaurantId, Request $request)
     {
-        $restaurant = Restaurant::findOrFail((int)$restaurantId);
+        $restaurant = $this->service->getById((int) $restaurantId);
         return ApiResponse::success((new RestaurantResource($restaurant))->toArray($request));
     }
 }

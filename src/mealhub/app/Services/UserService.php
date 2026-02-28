@@ -32,4 +32,32 @@ class UserService
             'status'     => UserStatus::ACTIVE,
         ]);
     }
+
+    /**
+     * 取得目前使用者資料
+     */
+    public function me(int $userId): User
+    {
+        return User::findOrFail($userId);
+    }
+
+    /**
+     * 更新目前使用者資料
+     */
+    public function updateSelf(int $userId, array $data): User
+    {
+        $user = User::findOrFail($userId);
+
+        $payload = [];
+        if (isset($data['firstName'])) $payload['first_name'] = $data['firstName'];
+        if (isset($data['lastName']))  $payload['last_name']  = $data['lastName'];
+        if (isset($data['phone']))     $payload['phone']      = $data['phone'];
+        if (isset($data['password']))  $payload['password']   = Hash::make($data['password']);
+
+        if (!empty($payload)) {
+            $user->update($payload);
+        }
+
+        return $user->refresh();
+    }
 }

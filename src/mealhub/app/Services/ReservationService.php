@@ -187,6 +187,63 @@ class ReservationService
     }
 
     /**
+     * 依訂位代碼查詢訂位（匿名查詢）
+     */
+    public function findByCode(string $code): ?Reservation
+    {
+        return Reservation::where('code', $code)->first();
+    }
+
+    /**
+     * 依短連結 token 查詢訂位（匿名查詢）
+     */
+    public function findByShortToken(string $token): ?Reservation
+    {
+        return Reservation::where('short_token', $token)->first();
+    }
+
+    /**
+     * 取得使用者訂位列表
+     */
+    public function listByUser(int $userId)
+    {
+        return Reservation::where('user_id', $userId)
+            ->orderByDesc('created_at')
+            ->get(['id','restaurant_id as restaurantId','reserve_date as date','timeslot','party_size as partySize','status']);
+    }
+
+    /**
+     * 修改使用者訂位時段：
+     * - 若訂位仍為有效（CONFIRMED 且未過期）則拒絕修改。
+     */
+    public function updateTimeslotForUser(int $userId, int $reservationId, string $start, string $end): Reservation
+    {
+        $reservation = Reservation::where('id', $reservationId)
+            ->where('user_id', $userId)
+            ->first();
+        if (!$reservation) {
+            throw new \InvalidArgumentException('notFound');
+        }
+
+        $currentTimeslot = (string) $reservation->timeslot;
+        $endStr = null;
+        if (str_contains($currentTimeslot, '-')) {
+            [, $endStr] = explode('-', $currentTimeslot, 2);
+        }
+        $now = now();
+        $endAt = $endStr
+            ? now()->parse($reservation->reserve_date.' '.$endStr)
+            : now()->parse($reservation->reserve_date.' 23:59');
+        $isActive = ($reservation->status === ReservationStatus::CONFIRMED) && $now->lte($endAt);
+        if ($isActive) {
+            throw new \InvalidArgumentException('cannotModifyTimeslotActive');
+        }
+
+        $reservation->update(['timeslot' => $start.'-'.$end]);
+        return $reservation->refresh();
+    }
+
+    /**
      * 查詢單一人數桶的可用量（capacity/reserved/available）
      * - capacity 來自餐廳 table_buckets
      * - reserved 來自 restaurant_reservation_slots.reserved

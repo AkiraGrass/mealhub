@@ -55,9 +55,12 @@ class AuthenticateJwt
             }
         }
 
+        $scopes = $payload['scope'] ?? [];
         $request->attributes->set('authUserId',   $userId);
         $request->attributes->set('auth_user_id', $userId); // 為相容既有存取
-        $request->attributes->set('authScope',    $payload['scope'] ?? []);
+        // Keep both key styles to avoid breaking existing middleware/controllers.
+        $request->attributes->set('authScope',    $scopes);
+        $request->attributes->set('auth_scope',   $scopes);
 
         return $next($request);
     }
